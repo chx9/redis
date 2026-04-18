@@ -3155,6 +3155,7 @@ int beforeNextClient(client *c);
 void clearClientConnectionState(client *c);
 void resetClient(client *c, int num_pcmds_to_free);
 void resetClientQbufState(client *c);
+void freeIOThreadQueryBuffer(void);
 void freeClientOriginalArgv(client *c);
 void freeClientArgv(client *c);
 void freeClientPendingCommands(client *c, int num_pcmds_to_free);

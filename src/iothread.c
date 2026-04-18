@@ -867,6 +867,7 @@ void *IOThreadMain(void *ptr) {
     aeSetBeforeSleepProc(t->el, IOThreadBeforeSleep);
     aeSetAfterSleepProc(t->el, IOThreadAfterSleep);
     aeMain(t->el);
+    freeIOThreadQueryBuffer();
     return NULL;
 }
 
@@ -945,16 +946,32 @@ void killIOThreads(void) {
     if (server.io_threads_num <= 1) return;
 
     int err, j;
+
+    /* Step 1: Signal all IO threads to stop their event loops cooperatively.
+     * Using aeStop + triggerEventNotifier instead of pthread_cancel to avoid
+     * a deadlock where pthread_cancel fires while the thread holds a malloc
+     * internal lock (tcache shutdown), causing pthread_join to hang forever. */
     for (j = 1; j < server.io_threads_num; j++) {
         if (IOThreads[j].tid == pthread_self()) continue;
-        if (IOThreads[j].tid && pthread_cancel(IOThreads[j].tid) == 0) {
-            if ((err = pthread_join(IOThreads[j].tid,NULL)) != 0) {
+        if (IOThreads[j].tid && IOThreads[j].el) {
+            aeStop(IOThreads[j].el);
+            /* Wake up the thread if it is blocked in epoll_wait so it checks
+             * the stop flag immediately rather than waiting up to 100ms. */
+            triggerEventNotifier(IOThreads[j].pending_clients_notifier);
+        }
+    }
+
+    /* Step 2: Wait for all IO threads to exit naturally. */
+    for (j = 1; j < server.io_threads_num; j++) {
+        if (IOThreads[j].tid == pthread_self()) continue;
+        if (IOThreads[j].tid) {
+            if ((err = pthread_join(IOThreads[j].tid, NULL)) != 0) {
                 serverLog(LL_WARNING,
                     "IO thread(tid:%lu) can not be joined: %s",
                         (unsigned long)IOThreads[j].tid, strerror(err));
             } else {
                 serverLog(LL_WARNING,
-                    "IO thread(tid:%lu) terminated",(unsigned long)IOThreads[j].tid);
+                    "IO thread(tid:%lu) terminated", (unsigned long)IOThreads[j].tid);
             }
         }
     }

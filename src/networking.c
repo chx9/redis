@@ -2007,6 +2007,13 @@ static void resetReusableQueryBuf(client *c) {
     thread_reusable_qb_used = 0;
 }
 
+void freeIOThreadQueryBuffer(void) {
+    if (thread_reusable_qb) {
+        sdsfree(thread_reusable_qb);
+        thread_reusable_qb = NULL;
+    }
+}
+
 /* Release references to string objects inside an encoded buffer.
  * If running in IO thread, defer the free to main thread via io_deferred_objects. */
 static void releaseBufReferences(client *c, char *buf, size_t bufpos) {

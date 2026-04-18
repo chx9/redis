@@ -5122,6 +5122,12 @@ int finishShutdown(void) {
     }
 #endif /* __sun */
 
+    /* Stop IO threads cooperatively before exiting.  pthread_cancel() with
+     * PTHREAD_CANCEL_ASYNCHRONOUS (set by makeThreadKillable) can fire while
+     * the thread holds an allocator-internal lock, causing pthread_join() to
+     * block forever.  killIOThreads() uses aeStop() + triggerEventNotifier()
+     * so threads exit naturally at their next event-loop iteration. */
+    killIOThreads();
 
     serverLog(LL_WARNING,"%s is now ready to exit, bye bye...",
         server.sentinel_mode ? "Sentinel" : "Redis");
